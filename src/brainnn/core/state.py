@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 
 @dataclass
@@ -78,6 +81,8 @@ class BrainState:
         self.history["fatigue"].append(self.fatigue)
         self.history["dopamine"].append(self.dopamine)
 
-    def to_tensor(self) -> torch.Tensor:
+    def to_tensor(self):
         """Return state as a tensor [arousal, focus, fatigue, dopamine]."""
+        if torch is None:
+            raise RuntimeError("torch is required for to_tensor()")
         return torch.tensor([self.arousal, self.focus, self.fatigue, self.dopamine])
