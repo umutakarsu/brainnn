@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brainnn"
+version = "0.2.0"
+description = "SynapseFlow — Neural OS & Application Layer for BCI Hardware. Synesthesia, ADHD modeling, IC-LEM simulation, calibration, and real-time parameter tuning."
+requires-python = ">=3.10"
+license = "MIT"
+
+dependencies = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "torchvision>=0.15",
+    "numpy>=1.24",
+    "scipy>=1.11.0",
+    "matplotlib>=3.7",
+    "plotly>=5.15",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov", "ruff"]
+cli = ["typer>=0.9", "rich>=13.0"]
+dashboard = ["streamlit>=1.30.0"]
+api = ["fastapi>=0.104", "uvicorn>=0.24", "websockets>=12.0"]
+
+[project.scripts]
+brainnn = "brainnn.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100

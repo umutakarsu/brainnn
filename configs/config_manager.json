@@ -1,0 +1,134 @@
+{
+  "$schema": "SynapseFlow User Configuration v1.0",
+  "metadata": {
+    "user_id": "patient_001",
+    "device_id": "BCI-A-2026-0042",
+    "calibration_date": "2026-04-12T10:00:00Z",
+    "firmware_version": "2.1.0",
+    "clinician": "Dr. Akarsu"
+  },
+
+  "calibration": {
+    "grid_shape": [32, 32],
+    "active_electrode_count": 847,
+    "overall_quality": 0.83,
+    "impedance_threshold_ohm": 1500000,
+    "selectivity_threshold": 0.3,
+    "zone_map": {
+      "visual_v1": [0, 1, 2, 3, 4, 5, 32, 33, 34, 35],
+      "visual_v4": [16, 17, 18, 19, 48, 49, 50, 51],
+      "auditory_a1": [160, 161, 162, 163, 192, 193, 194],
+      "somatosensory_s1": [320, 321, 322, 323],
+      "motor_m1": [336, 337, 338, 339],
+      "prefrontal": [800, 801, 802, 803]
+    }
+  },
+
+  "signal_processing": {
+    "gain": {
+      "global": 1.0,
+      "per_zone": {
+        "visual_v1": 1.2,
+        "visual_v4": 1.0,
+        "auditory_a1": 0.9,
+        "somatosensory_s1": 1.1,
+        "motor_m1": 0.8,
+        "prefrontal": 0.7
+      },
+      "description": "Multiplier applied to stimulation amplitude. Range: [0.0, 5.0]"
+    },
+    "latency": {
+      "target_ms": 8.0,
+      "max_allowed_ms": 10.0,
+      "current_measured_ms": 6.3,
+      "description": "End-to-end processing latency. Must stay < 10ms for cross-modal binding."
+    },
+    "filtering": {
+      "highpass_hz": 0.5,
+      "lowpass_hz": 7500,
+      "notch_hz": [50, 100],
+      "description": "Bandpass filter applied to raw electrode recordings."
+    }
+  },
+
+  "mapping_profile": {
+    "active_module": "synesthesia_audio_to_visual",
+    "available_modules": [
+      "synesthesia_audio_to_visual",
+      "synesthesia_visual_to_auditory",
+      "vision_restoration",
+      "motor_decode",
+      "closed_loop_mood"
+    ],
+    "synesthesia": {
+      "source_modality": "auditory",
+      "target_modality": "visual",
+      "sample_rate": 44100,
+      "fft_window": 1024,
+      "hop_size": 256,
+      "band_mappings": [
+        {
+          "name": "Bass → Red",
+          "freq_low": 20,
+          "freq_high": 250,
+          "output_channel": 0,
+          "gain": 1.2,
+          "transfer_function": "log"
+        },
+        {
+          "name": "Mid → Green",
+          "freq_low": 250,
+          "freq_high": 4000,
+          "output_channel": 1,
+          "gain": 1.0,
+          "transfer_function": "log"
+        },
+        {
+          "name": "Treble → Blue",
+          "freq_low": 4000,
+          "freq_high": 20000,
+          "output_channel": 2,
+          "gain": 0.8,
+          "transfer_function": "log"
+        }
+      ],
+      "master_gain": 1.0
+    }
+  },
+
+  "neuroplasticity": {
+    "onboarding_enabled": true,
+    "current_day": 1,
+    "total_onboarding_days": 14,
+    "intensity_schedule": {
+      "day_1": 0.10,
+      "day_2": 0.15,
+      "day_3": 0.20,
+      "day_4": 0.30,
+      "day_5": 0.40,
+      "day_6": 0.50,
+      "day_7": 0.60,
+      "day_8": 0.70,
+      "day_9": 0.75,
+      "day_10": 0.80,
+      "day_11": 0.85,
+      "day_12": 0.90,
+      "day_13": 0.95,
+      "day_14": 1.00
+    },
+    "session_duration_minutes": 30,
+    "rest_between_sessions_hours": 4,
+    "description": "Gradual intensity ramp to allow cortical adaptation. Brain perceives new input as noise if introduced too fast."
+  },
+
+  "safety": {
+    "charge_density_limit_uC_per_cm2": 30.0,
+    "max_amplitude_uA": 500,
+    "max_frequency_hz": 1000,
+    "max_pulse_width_us": 500,
+    "temperature_limit_celsius": 40.0,
+    "emergency_shutoff": true,
+    "impedance_check_interval_minutes": 5,
+    "description": "Hardware safety limits. Charge density must stay below 30 µC/cm² for platinum electrodes (Shannon limit)."
+  }
+}

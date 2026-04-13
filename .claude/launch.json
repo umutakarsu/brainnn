@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "IC-LEM Streamlit Dashboard",
+      "runtimeExecutable": "streamlit",
+      "runtimeArgs": ["run", "dashboard/app.py", "--server.port", "8501"],
+      "port": 8501
+    },
+    {
+      "name": "Neurodivergent",
+      "runtimeExecutable": "/Users/umutakarsu/brainnn/.venv/bin/streamlit",
+      "runtimeArgs": ["run", "neurodivergent_app.py", "--server.port", "8502", "--server.headless", "true"],
+      "port": 8502
+    }
+  ]
+}
