@@ -21,8 +21,13 @@ from enum import Enum
 from typing import Optional
 
 import numpy as np
-import torch
-import torch.nn as nn
+
+try:
+    import torch
+    import torch.nn as nn
+except ImportError:
+    torch = None
+    nn = None
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +259,16 @@ class CalibrationEngine:
 # Neural Response Model (for simulation / sandbox testing)
 # ---------------------------------------------------------------------------
 
-class NeuralResponseModel(nn.Module):
+if nn is None:
+    # Stub base class when torch is not installed (e.g., Streamlit Cloud)
+    class _ModuleStub:
+        pass
+    _BaseClass = _ModuleStub
+else:
+    _BaseClass = nn.Module
+
+
+class NeuralResponseModel(_BaseClass):
     """Learned model that predicts evoked neural response from stimulus parameters.
 
     This allows the simulation sandbox to predict how a calibrated brain

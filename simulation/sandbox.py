@@ -22,7 +22,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
-import torch
+
+try:
+    import torch
+except ImportError:
+    torch = None  # torch is optional — sandbox runs on pure numpy
 
 from brainnn.calibration.calibration_logic import (
     CalibrationEngine, CalibrationResult, CorticalZone,

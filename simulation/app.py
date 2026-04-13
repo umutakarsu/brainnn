@@ -1,8 +1,12 @@
 """SynapseFlow — Interactive Neural Simulation Dashboard (v2: Visual Storytelling)"""
 
 import sys
-sys.path.insert(0, "/Users/umutakarsu/brainnn/src")
-sys.path.insert(0, "/Users/umutakarsu/brainnn")
+from pathlib import Path
+
+# Make imports work both locally and on Streamlit Cloud
+_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root / "src"))
+sys.path.insert(0, str(_root))
 
 import time
 import numpy as np
