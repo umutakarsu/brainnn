@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brainnn"
-version = "0.2.0"
-description = "SynapseFlow — Neural OS & Application Layer for BCI Hardware. Synesthesia, ADHD modeling, IC-LEM simulation, calibration, and real-time parameter tuning."
+version = "0.3.0"
+description = "SynapseFlow — Neural OS & Application Layer for BCI Hardware. EEG decoding, synesthesia, ADHD modeling, and real-time BCI pipelines."
 requires-python = ">=3.10"
 license = "MIT"
 
@@ -24,6 +24,7 @@ dev = ["pytest>=7.0", "pytest-cov", "ruff"]
 cli = ["typer>=0.9", "rich>=13.0"]
 dashboard = ["streamlit>=1.30.0"]
 api = ["fastapi>=0.104", "uvicorn>=0.24", "websockets>=12.0"]
+ml = ["scikit-learn>=1.3"]
 
 [project.scripts]
 brainnn = "brainnn.cli.main:app"
