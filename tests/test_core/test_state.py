@@ -32,11 +32,51 @@ def test_stimulus_boosts_dopamine():
     assert state.dopamine > 0.3
 
 
-def test_snr_property():
-    state = BrainState(dopamine=1.0, fatigue=0.0)
-    assert state.snr == 1.0
+def test_precision_property():
+    """Precision is driven by ACh and NE (Yu & Dayan 2005), NOT by dopamine.
+
+    This test verifies the v0.2 Dayan-correction architecture:
+    high ACh + balanced NE -> high precision; fatigue caps precision;
+    dopamine does NOT enter the precision computation.
+    """
+    # Max precision: ACh=1.0, NE balanced at 0.5, no fatigue
+    state = BrainState(acetylcholine=1.0, norepinephrine=0.5, fatigue=0.0)
+    assert state.precision == 1.0
+    # Backward-compat alias should match
+    assert state.snr == state.precision
+
+    # Fatigue caps precision
     state.fatigue = 1.0
-    assert state.snr < 1.0
+    assert state.precision < 1.0
+
+    # Dopamine should NOT affect precision (pharmacological dissociation)
+    state.fatigue = 0.0
+    state.dopamine = 0.1
+    p_low_da = state.precision
+    state.dopamine = 0.9
+    p_high_da = state.precision
+    assert abs(p_low_da - p_high_da) < 1e-9
+
+
+def test_value_gate_property():
+    """Value-of-attention gate is driven by dopamine, capped by fatigue."""
+    state = BrainState(dopamine=1.0, fatigue=0.0)
+    assert state.value_gate == 1.0
+    state.fatigue = 1.0
+    assert state.value_gate < 1.0
+
+
+def test_norepinephrine_yerkes_dodson():
+    """NE has an inverted-U effect on precision (Yerkes-Dodson)."""
+    base = BrainState(acetylcholine=0.5, fatigue=0.0)
+    base.norepinephrine = 0.5
+    p_balanced = base.precision
+    base.norepinephrine = 0.0
+    p_low = base.precision
+    base.norepinephrine = 1.0
+    p_high = base.precision
+    assert p_balanced > p_low
+    assert p_balanced > p_high
 
 
 def test_hyperfocus_detection():
@@ -47,10 +87,13 @@ def test_hyperfocus_detection():
 
 
 def test_to_tensor():
-    state = BrainState(arousal=0.1, focus=0.2, fatigue=0.3, dopamine=0.4)
+    state = BrainState(
+        arousal=0.1, focus=0.2, fatigue=0.3,
+        dopamine=0.4, acetylcholine=0.5, norepinephrine=0.6,
+    )
     t = state.to_tensor()
-    assert t.shape == (4,)
-    assert torch.allclose(t, torch.tensor([0.1, 0.2, 0.3, 0.4]))
+    assert t.shape == (6,)
+    assert torch.allclose(t, torch.tensor([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]))
 
 
 def test_reset():

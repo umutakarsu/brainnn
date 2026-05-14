@@ -1,4 +1,27 @@
-"""ADHDAttention — multi-head attention with noise injection and dopaminergic modulation."""
+"""ADHDAttention — multi-head attention with two-axis neuromodulation.
+
+Architectural note (v0.2, Dayan-correction):
+    Two distinct neuromodulatory axes act on attention, NOT one:
+
+      1. Precision axis (ACh / NE)  →  controls noise floor on attention scores
+                                       via `GaussianNoiseInjector`. High precision
+                                       = crisp attention, low precision = scattered.
+
+      2. Value axis (DA)            →  controls which heads are amplified vs.
+                                       suppressed via `DopaminergicModulator`.
+                                       High DA = strong cost-benefit gating
+                                       (hyperfocus); low DA = weak gating
+                                       (distractibility, "why bother").
+
+    Earlier versions collapsed both axes onto dopamine, which doesn't match
+    the current neuromodulator literature (Yu & Dayan 2005; Westbrook & Braver).
+
+    The pharmacological implication of this split is that the model can now
+    in principle be dissociated by drug class:
+        - Cholinergic interventions (donepezil)   → affect precision noise
+        - Noradrenergic interventions (atomoxetine) → affect arousal / NE
+        - Dopaminergic interventions (methylphenidate, amphetamine) → affect value gain
+"""
 
 from __future__ import annotations
 
@@ -17,11 +40,19 @@ from brainnn.attention.modulation import DopaminergicModulator
 class ADHDAttention(nn.Module):
     """Multi-head attention modified to simulate ADHD attention patterns.
 
-    Key differences from standard attention:
-    1. Noise injection into attention scores (low SNR = scattered focus)
-    2. Dopaminergic gating of attention heads (some heads go dark)
-    3. Stochastic head dropout (unpredictable attention shifts)
-    4. Hyperfocus mode (dopamine spike → locked-on attention)
+    Two-axis neuromodulation (per Yu & Dayan 2005 framework):
+
+    PRECISION AXIS (ACh / NE) — applied to attention SCORES (pre-softmax):
+        1. Cholinergic/noradrenergic precision controls noise on attention scores.
+           Low precision = scattered focus; high precision = crisp attention.
+
+    VALUE AXIS (DA) — applied to attention OUTPUTS (per-head, post-softmax):
+        2. Dopaminergic value gating controls which heads are amplified.
+           Low DA = weak gating + head dropout (distractibility).
+           High DA = strong gating, lock onto high-value heads (hyperfocus).
+
+    Pharmacologically dissociable: ACh drugs → precision; NE drugs → arousal/precision;
+    DA drugs → value gain.
 
     Input:  (batch, seq_len, embed_dim) — can also work with (batch, embed_dim)
     Output: (batch, seq_len, embed_dim), attention_weights
@@ -41,7 +72,9 @@ class ADHDAttention(nn.Module):
         self.v_proj = nn.Linear(embed_dim, embed_dim)
         self.out_proj = nn.Linear(embed_dim, embed_dim)
 
-        # ADHD-specific components
+        # Two-axis neuromodulation:
+        #   noise_injector      → ACh/NE-driven precision (acts on scores)
+        #   dopamine_modulator  → DA-driven value gating (acts on per-head outputs)
         self.noise_injector = GaussianNoiseInjector(max_noise_std=config.max_noise_std)
         self.dopamine_modulator = DopaminergicModulator(config)
 
@@ -85,8 +118,10 @@ class ADHDAttention(nn.Module):
         # Compute attention scores
         scores = torch.matmul(q, k.transpose(-2, -1)) / self.scale
 
-        # ADHD modification 1: Inject noise based on SNR
-        scores = self.noise_injector(scores, brain_state.snr)
+        # PRECISION AXIS (ACh / NE): inject noise on scores based on cholinergic precision.
+        # `brain_state.precision` (aliased as .snr) is computed from acetylcholine and
+        # norepinephrine — NOT dopamine. See `core/state.py` for the formula.
+        scores = self.noise_injector(scores, brain_state.precision)
 
         # Compute attention weights
         attn_weights = F.softmax(scores, dim=-1)
@@ -94,7 +129,8 @@ class ADHDAttention(nn.Module):
         # Attend to values
         attn_output = torch.matmul(attn_weights, v)  # (batch, heads, seq, head_dim)
 
-        # ADHD modification 2: Dopaminergic modulation of heads
+        # VALUE AXIS (DA): cost-benefit gating over per-head outputs.
+        # Modulator reads `brain_state.value_gate` (dopamine-derived) internally.
         attn_output = self.dopamine_modulator(attn_output, brain_state)
 
         # Reshape and project output

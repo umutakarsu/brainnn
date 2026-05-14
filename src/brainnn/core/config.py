@@ -39,23 +39,30 @@ class SynesthesiaConfig:
 
 @dataclass
 class ADHDConfig:
-    """Configuration for ADHD attention simulation."""
+    """Configuration for ADHD attention simulation.
+
+    Neuromodulator architecture (Yu & Dayan 2005 framework):
+        Dopamine     -> value-of-attention gating (which heads to amplify)
+        Acetylcholine -> expected uncertainty / precision (noise floor)
+        Norepinephrine -> unexpected uncertainty / arousal (Yerkes-Dodson)
+    """
 
     # Number of attention heads
     num_heads: int = 8
-    # Baseline dopamine level [0, 1]
+
+    # Dopamine (value axis)
     baseline_dopamine: float = 0.3
-    # Dopamine decay rate per timestep
     dopamine_decay: float = 0.02
-    # Threshold for hyperfocus activation
     hyperfocus_threshold: float = 0.8
-    # Base signal-to-noise ratio (higher = more focused)
-    base_snr: float = 1.0
-    # Maximum noise magnitude
-    max_noise_std: float = 0.5
-    # Probability of random head dropout per step
     head_dropout_prob: float = 0.3
-    # Fatigue accumulation rate
+
+    # Acetylcholine / Norepinephrine (precision axis)
+    baseline_acetylcholine: float = 0.5
+    baseline_norepinephrine: float = 0.5
+    max_noise_std: float = 0.5
+    base_snr: float = 1.0  # retained for backward compat; unused in new code
+
+    # General
     fatigue_rate: float = 0.01
 
 
