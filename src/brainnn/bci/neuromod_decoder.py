@@ -201,42 +201,74 @@ class NeuromodConditionedDecoder(nn.Module):
 # ---------------------------------------------------------------------------
 # Behavioral markers → neuromodulator predictor (heuristic v0)
 # ---------------------------------------------------------------------------
+#
+# HONESTY NOTE — evidence hierarchy per marker (updated after Jul 2026
+# literature synthesis; see `neuromod_bci_synthesis.md` at repo root):
+#
+#   NE : Pupillometry is the ONLY validated real-time neuromodulator marker
+#        [Joshi, Li, Kalwani & Gold 2016, Neuron 89(1):221; Reimer et al.
+#        2014, 2016]. EEG alpha power is a distal proxy — related to arousal
+#        but NOT specifically to LC-NE firing. When pupillometry is available
+#        it should REPLACE the alpha-based proxy below.
+#
+#   ACh: NO standalone validated real-time EEG-only marker exists. Pupillometry
+#        conflates NE and ACh contributions [Reimer et al. 2016]. Our
+#        signal-variance heuristic below is a placeholder rooted in "expected
+#        uncertainty" intuition [Yu & Dayan 2005] but is NOT empirically
+#        validated as an ACh estimator. Treat all ACh values below as
+#        exploratory, not measurements.
+#
+#   DA : No validated real-time DA estimator exists at all [Berke 2018, Nat
+#        Neurosci 21(6):787]. Correlational RT-variability associations do
+#        not translate to closed-loop use. Our default of 0.5 is not an
+#        inference — it is honestly a placeholder awaiting a marker.
+#
+# In any publication, this hierarchy MUST be surfaced. Do not present ACh/DA
+# as "measured"; only as "conditioned-upon".
+# ---------------------------------------------------------------------------
 
 def infer_neuromod_from_signal(x: torch.Tensor) -> BrainState:
-    """Heuristic estimator of neuromodulator state from a single EEG epoch.
+    """Prototype-only neuromodulator estimator from a single EEG epoch.
 
-    Uses spectral features as proxies (rough, prototype-level):
-        - Alpha (8-12 Hz) power over posterior channels → inverse arousal → NE proxy
-        - Global signal variance across trial → uncertainty → ACh proxy
-        - Later-trial-index (fatigue-like) → DA suppression proxy
+    See HONESTY NOTE above. This function returns:
+        - a NE proxy (alpha-power based; distal, not a validated marker)
+        - an ACh proxy (signal-variance based; theoretical, not validated)
+        - a DA default of 0.5 (no validated closed-loop marker exists)
 
-    This is a placeholder to demonstrate the interface — a real implementation
-    would use validated markers (pupil, HRV, HEP, EEG alpha over parietal cortex).
+    For any real experimental deployment:
+        - Replace the NE proxy with pupillometry
+          [Joshi et al. 2016, DOI:10.1016/j.neuron.2015.11.028]
+        - Treat ACh conditioning as ablation-testable but not measured
+        - Treat DA conditioning as a knob to test pharmacologically
+          (L-DOPA / haloperidol / methylphenidate), not to infer from signal
 
     Args:
-        x: (channels, timepoints) — a single EEG epoch, sample-rate ~250 Hz assumed
+        x: (channels, timepoints) EEG epoch, sample rate ~250 Hz.
     Returns:
-        BrainState populated with heuristic estimates
+        BrainState with the fields above; treat each per the hierarchy in
+        the module-level HONESTY NOTE.
     """
     with torch.no_grad():
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x).float()
 
-        # Global signal energy — high variance = high uncertainty (low ACh)
+        # ACh proxy (PLACEHOLDER — not validated as an ACh estimator)
+        # Rationale: expected uncertainty → precision → ACh; higher signal
+        # variance ≈ noisier ≈ lower expected precision.
         signal_var = float(x.var().item())
-        # Normalize into [0, 1]. Empirical scaling on BNCI normalized data.
         acetylcholine = float(np.clip(1.0 - signal_var / 2.0, 0.1, 0.9))
 
-        # Alpha power estimation via FFT on posterior channels
-        # (Take last 8 channels as proxy for posterior; real code would use montage)
-        fft = torch.fft.rfft(x[-8:], dim=-1)
+        # NE proxy (DISTAL — alpha power is arousal-related but not
+        # specifically LC-NE; pupillometry is the validated marker)
+        fft = torch.fft.rfft(x[-8:], dim=-1)  # posterior-ish channels
         freqs = torch.fft.rfftfreq(x.shape[-1], d=1/250.0)
         alpha_mask = (freqs >= 8) & (freqs <= 12)
         alpha_power = float(fft[..., alpha_mask].abs().mean().item())
-        # High alpha = relaxed = low arousal = low NE
         norepinephrine = float(np.clip(1.0 - alpha_power / 3.0, 0.2, 0.8))
 
-        # Dopamine: default mid; would be modulated by task engagement in real use
+        # DA (NOT INFERRED — no validated real-time marker)
+        # Default = 0.5. In experiments, set this via pharmacological arm
+        # or task-engagement design, not derived from EEG.
         dopamine = 0.5
 
     return BrainState(
@@ -244,6 +276,96 @@ def infer_neuromod_from_signal(x: torch.Tensor) -> BrainState:
         norepinephrine=norepinephrine,
         dopamine=dopamine,
     )
+
+
+# ---------------------------------------------------------------------------
+# Shuffle-control ablation (falsifiability test)
+# ---------------------------------------------------------------------------
+#
+# Following Frank, Seeberger & O'Reilly (2004, Science 306:1940), a genuine
+# conditioning effect must be dissociable from added-capacity artifact. If we
+# shuffle the neuromodulator vector across trials — breaking the trial <->
+# state correlation — a truly conditioning-based model should DEGRADE, while
+# a model that is merely using the extra parameters as noise-regularization
+# should show UNCHANGED performance.
+#
+# This is the primary in-silico falsifiability test for the paper.
+# ---------------------------------------------------------------------------
+
+def shuffled_neuromod(neuromod: torch.Tensor, seed: int = 0) -> torch.Tensor:
+    """Shuffle a batch of neuromodulator vectors across the batch dimension.
+
+    Args:
+        neuromod: (batch, dim) — per-sample neuromodulator states.
+        seed: reproducibility seed.
+    Returns:
+        Shuffled tensor, same shape, same distribution, but the trial <->
+        state pairing is broken.
+    """
+    assert neuromod.ndim == 2, "Expected (batch, dim)"
+    g = torch.Generator(device=neuromod.device).manual_seed(seed)
+    perm = torch.randperm(neuromod.shape[0], generator=g, device=neuromod.device)
+    return neuromod[perm]
+
+
+def ablation_summary(
+    decoder: "NeuromodConditionedDecoder",
+    x: torch.Tensor,
+    y: torch.Tensor,
+    neuromod: torch.Tensor,
+    subject_id: torch.Tensor | None = None,
+    n_shuffle_seeds: int = 5,
+) -> dict:
+    """Run the shuffle-control ablation on a fitted decoder.
+
+    Compares:
+        - true:      (trial, state) pairing preserved
+        - shuffled:  state randomly re-paired to trials (n_shuffle_seeds averages)
+        - no-cond:   FiLM turned off (γ=0, β=0)
+
+    Args:
+        decoder: a NeuromodConditionedDecoder (typically fitted).
+        x: (batch, channels, timepoints)
+        y: (batch,) ground-truth labels
+        neuromod: (batch, dim) per-sample true neuromodulator states
+        subject_id: optional subject IDs for the base model
+        n_shuffle_seeds: number of shuffle repetitions to average over
+
+    Returns:
+        dict with 'true_acc', 'shuffled_acc_mean', 'shuffled_acc_std', 'nocond_acc'.
+
+    Interpretation:
+        - If true_acc >> shuffled_acc: conditioning genuinely helps → paper stands.
+        - If true_acc ≈ shuffled_acc: FiLM only added capacity, not information.
+    """
+    decoder.eval()
+    with torch.no_grad():
+        # True conditioning
+        logits_true = decoder(x, subject_id=subject_id, neuromod=neuromod)
+        true_acc = float((logits_true.argmax(-1) == y).float().mean().item())
+
+        # Shuffled — break state <-> trial pairing
+        shuffled_accs = []
+        for s in range(n_shuffle_seeds):
+            nm_shuf = shuffled_neuromod(neuromod, seed=s)
+            logits_s = decoder(x, subject_id=subject_id, neuromod=nm_shuf)
+            shuffled_accs.append(
+                float((logits_s.argmax(-1) == y).float().mean().item())
+            )
+        shuf_mean = float(np.mean(shuffled_accs))
+        shuf_std = float(np.std(shuffled_accs))
+
+        # No conditioning at all — use base model's classifier directly
+        logits_nocond = decoder.base_model(x, subject_id=subject_id)
+        nocond_acc = float((logits_nocond.argmax(-1) == y).float().mean().item())
+
+    return {
+        "true_acc": true_acc,
+        "shuffled_acc_mean": shuf_mean,
+        "shuffled_acc_std": shuf_std,
+        "nocond_acc": nocond_acc,
+        "conditioning_effect": true_acc - shuf_mean,
+    }
 
 
 if __name__ == "__main__":
