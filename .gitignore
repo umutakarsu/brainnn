@@ -6,6 +6,7 @@ build/
 .venv/
 .env
 *.png
+!docs/img/*.png
 .pytest_cache/
 .ruff_cache/
 .claude/

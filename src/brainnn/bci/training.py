@@ -24,7 +24,12 @@ from torch.utils.data import DataLoader, TensorDataset
 
 @dataclass
 class TrainConfig:
-    """Training hyperparameters."""
+    """Training hyperparameters.
+
+    Note on device selection: for models this small (~665K params) the
+    Metal/MPS backend is actually SLOWER than CPU because transfer
+    overhead dominates the compute. We default to CPU.
+    """
     n_epochs: int = 25
     batch_size: int = 64
     lr: float = 3e-4

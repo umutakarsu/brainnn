@@ -29,8 +29,9 @@ def main():
     print(f"\nTotal epochs across subjects: "
           f"{sum(r.n_epochs for r in recordings)}")
 
-    # 25 epochs is enough for prototype; can grow later
-    train_cfg = TrainConfig(n_epochs=25, batch_size=64, lr=3e-4)
+    # 12 epochs — enough to see the cross-subject transfer signal
+    # while completing on CPU in ~20 minutes.
+    train_cfg = TrainConfig(n_epochs=12, batch_size=64, lr=3e-4)
 
     t0 = time.time()
     results = run_loso(recordings, cfg=train_cfg, verbose=True)
