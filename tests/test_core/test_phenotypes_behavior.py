@@ -221,3 +221,50 @@ def test_stimulant_raises_tonic_and_lowers_phasic_gain():
 def test_unknown_phenotype_raises():
     with pytest.raises(KeyError):
         get_phenotype("not_a_thing")
+
+
+def test_all_medications_have_display_metadata():
+    for key, med in MEDICATIONS.items():
+        if med is None:
+            continue
+        assert med.drug_class, key
+        assert med.brand_names, key
+        assert med.description, key
+
+
+def test_stimulants_raise_tonic_dopamine_more_than_non_stimulants():
+    """Stimulants are defined by a large rise in tonic DA; every other class
+    should move it less. This is the mechanistic distinction the model makes."""
+    base = get_phenotype("adhd_combined").tonic_dopamine
+    stim = {"methylphenidate", "amphetamine", "lisdexamfetamine"}
+    rises = {k: get_phenotype("adhd_combined", k).tonic_dopamine - base
+             for k in MEDICATIONS if k != "none"}
+    assert min(rises[k] for k in stim) > max(v for k, v in rises.items() if k not in stim)
+
+
+def test_clonidine_lowers_tonic_ne_unlike_guanfacine():
+    """Clonidine hits presynaptic LC autoreceptors and dampens NE firing;
+    guanfacine's postsynaptic alpha-2A selectivity does not. The model must
+    carry that direction, since it is why the two suit different presentations."""
+    base = get_phenotype("adhd_combined")
+    clo = get_phenotype("adhd_combined", "clonidine")
+    gua = get_phenotype("adhd_combined", "guanfacine")
+    assert clo.ne_tonic < base.ne_tonic
+    assert gua.ne_tonic >= base.ne_tonic
+
+
+def test_lisdexamfetamine_is_amphetamine_at_the_synapse():
+    """Same molecule after conversion; the model has no PK, so the two must land
+    close together rather than pretending to a difference it cannot represent."""
+    amp = get_phenotype("adhd_combined", "amphetamine")
+    lis = get_phenotype("adhd_combined", "lisdexamfetamine")
+    assert abs(amp.tonic_dopamine - lis.tonic_dopamine) < 0.05
+    assert abs(amp.phasic_gain - lis.phasic_gain) < 0.10
+
+
+def test_every_medication_reduces_lapses():
+    base = get_phenotype("adhd_combined").lapse_rate
+    for k in MEDICATIONS:
+        if k == "none":
+            continue
+        assert get_phenotype("adhd_combined", k).lapse_rate < base, k

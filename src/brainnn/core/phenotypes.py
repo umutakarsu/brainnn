@@ -132,6 +132,9 @@ class Medication:
     d_acetylcholine: float = 0.0
     d_ne_tonic: float = 0.0
     d_lapse_rate: float = 0.0
+    # Metadata for display and grouping. Not used by with_medication().
+    drug_class: str = ""
+    brand_names: str = ""
 
 
 def _clip(x: float) -> float:
@@ -218,8 +221,23 @@ PHENOTYPES = {
 # Medications
 # ---------------------------------------------------------------------------
 
+# A note on scope: this model has no pharmacokinetics — no onset, no half-life,
+# no dose. It represents each drug by the *direction* its primary mechanism
+# pushes the phenotype parameters at steady state. Two consequences:
+#   - Drugs that are the same molecule at the synapse (amphetamine and its
+#     prodrug lisdexamfetamine) get near-identical parameters here, even though
+#     their clinical feel differs a lot because of release kinetics.
+#   - Nothing here says anything about who should take what. Direction of
+#     effect is grounded in pharmacology; magnitude is illustrative.
+
+# --- Stimulants: raise tonic dopamine, which re-engages autoreceptor feedback
+#     and brings oversized phasic bursts down. This is why a stimulant can
+#     reduce rather than increase impulsivity in ADHD.
+
 METHYLPHENIDATE = Medication(
     name="Methylphenidate",
+    drug_class="Stimulant",
+    brand_names="Ritalin, Concerta, Medikinet, Equasym",
     description=(
         "blocks the dopamine and norepinephrine transporters, raising "
         "synaptic tone for both. Raising tonic DA re-engages autoreceptor "
@@ -234,6 +252,8 @@ METHYLPHENIDATE = Medication(
 
 AMPHETAMINE = Medication(
     name="Amphetamine",
+    drug_class="Stimulant",
+    brand_names="Adderall, Attentin, Dexedrine (dexamfetamine)",
     description=(
         "blocks reuptake and additionally promotes vesicular release, so the "
         "rise in tonic tone is larger than with methylphenidate."
@@ -244,13 +264,38 @@ AMPHETAMINE = Medication(
     d_lapse_rate=-0.040,
 )
 
+LISDEXAMFETAMINE = Medication(
+    name="Lisdexamfetamine",
+    drug_class="Stimulant (prodrug)",
+    brand_names="Elvanse, Vyvanse",
+    description=(
+        "is an inactive prodrug that red blood cells slowly convert into "
+        "dexamfetamine, so at the synapse it is amphetamine. The clinical "
+        "difference — gradual onset, ~12-hour duration, smoother curve, lower "
+        "misuse potential — is pharmacokinetic, which this model does not "
+        "represent. Its parameters are therefore nearly the same as "
+        "amphetamine's; the slightly gentler phasic reduction stands in for "
+        "the absence of a sharp onset spike."
+    ),
+    d_tonic_dopamine=+0.18,
+    d_phasic_gain=-0.36,
+    d_ne_tonic=+0.12,
+    d_lapse_rate=-0.038,
+)
+
+# --- Norepinephrine reuptake inhibitors: act mainly on the arousal/precision
+#     axis. Prefrontal dopamine is cleared largely by NET rather than DAT, so
+#     these raise prefrontal DA too, but without the striatal reward effect.
+
 ATOMOXETINE = Medication(
     name="Atomoxetine",
+    drug_class="Norepinephrine reuptake inhibitor",
+    brand_names="Strattera",
     description=(
         "selectively inhibits the norepinephrine transporter. Because "
         "prefrontal dopamine is cleared largely by NET rather than DAT, this "
         "also raises prefrontal DA, but it acts mainly on the arousal/precision "
-        "axis rather than on reward gating."
+        "axis rather than on reward gating. Takes weeks to reach full effect."
     ),
     d_tonic_dopamine=+0.06,
     d_phasic_gain=-0.10,
@@ -259,24 +304,110 @@ ATOMOXETINE = Medication(
     d_lapse_rate=-0.025,
 )
 
+VILOXAZINE = Medication(
+    name="Viloxazine",
+    drug_class="Norepinephrine reuptake inhibitor",
+    brand_names="Qelbree",
+    description=(
+        "inhibits the norepinephrine transporter like atomoxetine, with "
+        "additional serotonergic modulation (5-HT2B antagonism, 5-HT2C "
+        "agonism). Approved for ADHD in 2021. In this model it behaves as a "
+        "slightly milder atomoxetine; the serotonergic component is not "
+        "represented."
+    ),
+    d_tonic_dopamine=+0.05,
+    d_phasic_gain=-0.08,
+    d_acetylcholine=+0.04,
+    d_ne_tonic=+0.14,
+    d_lapse_rate=-0.022,
+)
+
+# --- Alpha-2 adrenergic agonists: strengthen prefrontal signalling and reduce
+#     noise. They act on precision, not on reward tone.
+
 GUANFACINE = Medication(
     name="Guanfacine",
+    drug_class="Alpha-2A agonist",
+    brand_names="Intuniv, Tenex",
     description=(
-        "an alpha-2A adrenergic agonist that strengthens prefrontal network "
-        "signalling. It acts on precision and noise rather than on reward "
-        "tone, so it reduces lapses with little effect on phasic gain."
+        "is a selective alpha-2A adrenergic agonist that strengthens prefrontal "
+        "network signalling at postsynaptic receptors. It acts on precision and "
+        "noise rather than on reward tone, so it reduces lapses with little "
+        "effect on phasic gain."
     ),
     d_acetylcholine=+0.10,
     d_ne_tonic=+0.04,
     d_lapse_rate=-0.030,
 )
 
+CLONIDINE = Medication(
+    name="Clonidine",
+    drug_class="Alpha-2 agonist (non-selective)",
+    brand_names="Kapvay, Catapres",
+    description=(
+        "is a less selective alpha-2 agonist than guanfacine. Alongside the "
+        "prefrontal effect it hits presynaptic autoreceptors on the locus "
+        "coeruleus, which dampens noradrenergic firing — hence its sedating, "
+        "blood-pressure-lowering profile. The model shows this as a drop in "
+        "tonic NE rather than a rise. It tends to suit hyperactive and "
+        "sleep-disturbed presentations better than hypoaroused, sluggish ones, "
+        "and you can see why by applying it to the inattentive phenotype."
+    ),
+    d_acetylcholine=+0.06,
+    d_ne_tonic=-0.06,
+    d_lapse_rate=-0.020,
+)
+
+# --- Other agents used for ADHD, usually off-label or second line.
+
+BUPROPION = Medication(
+    name="Bupropion",
+    drug_class="Norepinephrine–dopamine reuptake inhibitor",
+    brand_names="Wellbutrin, Zyban, Elontril",
+    description=(
+        "weakly inhibits both the dopamine and norepinephrine transporters — "
+        "the same mechanism as a stimulant, at much lower potency. Used "
+        "off-label for ADHD, often when depression or nicotine dependence is "
+        "also present. Effects build over weeks rather than hours."
+    ),
+    d_tonic_dopamine=+0.08,
+    d_phasic_gain=-0.12,
+    d_ne_tonic=+0.08,
+    d_lapse_rate=-0.015,
+)
+
+MODAFINIL = Medication(
+    name="Modafinil",
+    drug_class="Wakefulness promoter",
+    brand_names="Provigil, Modiodal, Vigil",
+    description=(
+        "is a weak dopamine transporter inhibitor whose main effect runs "
+        "through orexin and histamine systems that promote wakefulness. It "
+        "raises arousal and vigilance far more than it raises reward tone, so "
+        "in this model it reduces lapses mostly via the norepinephrine axis. "
+        "Used off-label for ADHD, more often in adults."
+    ),
+    d_tonic_dopamine=+0.05,
+    d_acetylcholine=+0.04,
+    d_ne_tonic=+0.14,
+    d_lapse_rate=-0.022,
+)
+
 MEDICATIONS = {
     "none": None,
+    # stimulants
     "methylphenidate": METHYLPHENIDATE,
     "amphetamine": AMPHETAMINE,
+    "lisdexamfetamine": LISDEXAMFETAMINE,
+    # norepinephrine reuptake inhibitors
     "atomoxetine": ATOMOXETINE,
+    "viloxazine": VILOXAZINE,
+    # alpha-2 agonists
     "guanfacine": GUANFACINE,
+    "clonidine": CLONIDINE,
+    # other
+    "bupropion": BUPROPION,
+    "modafinil": MODAFINIL,
 }
 
 

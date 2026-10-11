@@ -132,12 +132,23 @@ phenotype_key = st.sidebar.selectbox(
     help="Sets tonic dopamine, phasic gain, cholinergic baseline, lapse rate and "
          "fatigue ceiling together. ADHD profiles have lower tonic dopamine, which "
          "disinhibits phasic bursts, and more frequent attentional lapses.")
+def _medication_label(k: str) -> str:
+    m = MEDICATIONS[k]
+    return "none" if m is None else f"{m.name}  ·  {m.brand_names}"
+
+
 medication_key = st.sidebar.selectbox(
     "Medication", list(MEDICATIONS.keys()),
-    format_func=lambda k: "none" if MEDICATIONS[k] is None else MEDICATIONS[k].name,
+    format_func=_medication_label,
     help="Mechanism-level approximation of each drug's primary action on the "
          "phenotype parameters. Directions are grounded in pharmacology; "
-         "magnitudes are illustrative.")
+         "magnitudes are illustrative. No pharmacokinetics — no onset, "
+         "half-life or dose — so drugs that are the same molecule at the "
+         "synapse look nearly identical here.")
+
+if MEDICATIONS[medication_key] is not None:
+    _m = MEDICATIONS[medication_key]
+    st.sidebar.caption(f"**{_m.drug_class}.** {_m.name} {_m.description}")
 syn_strength = st.sidebar.slider("Cross-modal coupling", 0.0, 1.0, 0.7,
                                  help="Strength of lateral connections between modality "
                                       "encoders.")
