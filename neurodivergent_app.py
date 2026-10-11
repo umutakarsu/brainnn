@@ -18,6 +18,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
+
+from brainnn.behavior import fit_exgaussian, simulate_session
+from brainnn.core.phenotypes import MEDICATIONS, PHENOTYPES, get_phenotype
 import torch
 
 from brainnn.core.brain import NeuroDivergentBrainSimulator
@@ -123,9 +126,18 @@ norepinephrine (surprise), and a strong one can briefly relieve fatigue.
 st.sidebar.header("Parameters")
 steps = st.sidebar.slider("Simulation steps", 10, 100, 40,
                           help="Number of discrete timesteps to simulate.")
-dopamine = st.sidebar.slider("Baseline dopamine", 0.0, 1.0, 0.35,
-                             help="Starting dopamine. Lower = weaker value gating, "
-                                  "more scattered attention.")
+phenotype_key = st.sidebar.selectbox(
+    "Attentional phenotype", list(PHENOTYPES.keys()),
+    format_func=lambda k: PHENOTYPES[k].name,
+    help="Sets tonic dopamine, phasic gain, cholinergic baseline, lapse rate and "
+         "fatigue ceiling together. ADHD profiles have lower tonic dopamine, which "
+         "disinhibits phasic bursts, and more frequent attentional lapses.")
+medication_key = st.sidebar.selectbox(
+    "Medication", list(MEDICATIONS.keys()),
+    format_func=lambda k: "none" if MEDICATIONS[k] is None else MEDICATIONS[k].name,
+    help="Mechanism-level approximation of each drug's primary action on the "
+         "phenotype parameters. Directions are grounded in pharmacology; "
+         "magnitudes are illustrative.")
 syn_strength = st.sidebar.slider("Cross-modal coupling", 0.0, 1.0, 0.7,
                                  help="Strength of lateral connections between modality "
                                       "encoders.")
@@ -188,21 +200,30 @@ def make_inputs(step: int, total_steps: int) -> dict:
 # ============================================================
 # Model construction (cached) and simulation
 # ============================================================
-@st.cache_resource(max_entries=4, show_spinner=False)
-def build_brain(baseline_dopamine: float, coupling: float, max_noise: float, seed: int):
+@st.cache_resource(max_entries=6, show_spinner=False)
+def build_brain(phenotype_key: str, medication_key: str, coupling: float,
+                max_noise: float, seed: int):
     """Build the simulator once per parameter set.
 
     Weights are random and untrained; seeding only makes them reproducible.
     A warm-up step materialises the LazyLinear layers so that seeding immediately
     before `simulate()` yields an identical RNG stream on every run, cached or not.
+
+    The phenotype is attached to the state *before* the warm-up and reset so that
+    reset() initialises every neuromodulator from the phenotype's baselines. The
+    config's baseline_dopamine is set to match the phenotype's tonic level because
+    brain.reset() passes it through explicitly.
     """
+    pheno = get_phenotype(phenotype_key, medication_key)
+
     torch.manual_seed(seed)
     config = BrainConfig.default_three_modality()
-    config.adhd.baseline_dopamine = baseline_dopamine
+    config.adhd.baseline_dopamine = pheno.tonic_dopamine
     config.synesthesia.synesthesia_strength = coupling
     config.adhd.max_noise_std = max_noise
 
     brain = NeuroDivergentBrainSimulator(config)
+    brain.state.phenotype = pheno
     with torch.no_grad():
         brain.step(make_inputs(0, 1), reward_signal=0.0, generate=False)
     brain.reset()
@@ -210,7 +231,8 @@ def build_brain(baseline_dopamine: float, coupling: float, max_noise: float, see
 
 
 def run_simulation(params: dict):
-    brain = build_brain(params["dopamine"], params["syn"], params["noise"], params["seed"])
+    brain = build_brain(params["phenotype"], params["medication"],
+                        params["syn"], params["noise"], params["seed"])
 
     rewards = [0.0] * params["steps"]
     rewards[int(params["r1_step"])] = params["r1_val"]
@@ -218,6 +240,9 @@ def run_simulation(params: dict):
 
     inputs_seq = [make_inputs(i, params["steps"]) for i in range(params["steps"])]
 
+    # Lapses are sampled from the state's own generator; seed it alongside torch
+    # so the lapse pattern is reproducible for a given seed.
+    brain.state._rng = np.random.default_rng(params["seed"])
     torch.manual_seed(params["seed"])
     with torch.no_grad():
         outputs = brain.simulate(inputs_seq, reward_signals=rewards, generate=False)
@@ -226,7 +251,8 @@ def run_simulation(params: dict):
 
 params = {
     "steps": steps,
-    "dopamine": dopamine,
+    "phenotype": phenotype_key,
+    "medication": medication_key,
     "syn": syn_strength,
     "noise": noise,
     "seed": int(seed),
@@ -256,23 +282,26 @@ x = list(range(n_steps))
 
 
 def derived_series(hist: dict) -> dict:
-    """Recompute `precision` and `value_gate` from the recorded history.
+    """Return `precision`, `value_gate` and `hyperfocused` series.
 
-    Uses BrainState's own properties rather than re-implementing the formulas,
-    so this cannot drift from `src/brainnn/core/state.py`.
+    v0.3 records precision and value_gate directly in the history, including the
+    effect of attentional lapses and the phenotype's fatigue sensitivity. Those
+    recorded values are authoritative — recomputing them from a default-phenotype
+    probe (the v0.2 approach) would silently drop the lapse dips. The probe is
+    kept only for the hyperfocus flag, which is not recorded.
     """
+    n = len(hist["dopamine"])
     probe = BrainState()
-    precision, value_gate, hyperfocus = [], [], []
-    for i in range(len(hist["dopamine"])):
-        probe.acetylcholine = hist["acetylcholine"][i]
-        probe.norepinephrine = hist["norepinephrine"][i]
-        probe.fatigue = hist["fatigue"][i]
-        probe.dopamine = hist["dopamine"][i]
+    hyperfocus = []
+    for i in range(n):
         probe.focus = hist["focus"][i]
-        precision.append(probe.precision)
-        value_gate.append(probe.value_gate)
         hyperfocus.append(probe.is_hyperfocused)
-    return {"precision": precision, "value_gate": value_gate, "hyperfocused": hyperfocus}
+
+    out = {"hyperfocused": hyperfocus}
+    for key in ("precision", "value_gate"):
+        if key in hist and len(hist[key]) == n:
+            out[key] = list(hist[key])
+    return out
 
 
 series = dict(history)
@@ -333,6 +362,100 @@ st.caption(
     "erodes both as the run goes on."
 )
 st.plotly_chart(timeline_figure(DERIVED_SERIES), width='stretch')
+
+# ============================================================
+# 2b. Attentional lapses
+# ============================================================
+if "lapse" in series and any(series["lapse"]):
+    lapse_steps = [i for i, v in enumerate(series["lapse"]) if v]
+    st.caption(
+        f"**Attentional lapses** on {len(lapse_steps)} of {n_steps} steps "
+        f"(steps {', '.join(map(str, lapse_steps[:12]))}"
+        f"{'…' if len(lapse_steps) > 12 else ''}). Each one is a transient collapse "
+        f"of precision — the dips you can see in the precision trace above. Lapses are "
+        f"the mechanism behind the slow tail in the reaction-time section below."
+    )
+
+# ============================================================
+# 2c. Reaction-time signature — the behavioural prediction
+# ============================================================
+st.header("What this predicts about behaviour")
+st.caption(
+    "The same state machinery, run through a sustained-attention task for 400 trials, "
+    "produces a reaction-time distribution. The most replicated behavioural finding in "
+    "ADHD is that this distribution gains a **heavy right tail** — occasional very slow "
+    "responses from attentional lapses — rather than shifting uniformly. In the "
+    "ex-Gaussian decomposition that tail is **τ (tau)**; the Gaussian spread is **σ**; "
+    "the centre is **μ**. The published group difference is largest in τ, moderate in σ, "
+    "smallest in μ (Leth-Steensen et al. 2000; Kofler et al. 2013 meta-analysis)."
+)
+
+
+@st.cache_data(show_spinner=False)
+def rt_session_summary(phenotype_key: str, medication_key: str, seed: int):
+    """One simulated participant's RTs plus the ex-Gaussian fit.
+
+    Returns plain arrays and floats so the result caches cleanly.
+    """
+    pheno = get_phenotype(phenotype_key, medication_key)
+    sess = simulate_session(pheno, n_trials=400, seed=seed)
+    fit = fit_exgaussian(sess["rt"])
+    return {
+        "rt": np.asarray(sess["rt"], dtype=float),
+        "lapse_rate": float(np.mean(sess["lapse"])),
+        "mu": fit.mu, "sigma": fit.sigma, "tau": fit.tau,
+        "name": pheno.name,
+    }
+
+
+selected = rt_session_summary(phenotype_key, medication_key, int(seed))
+reference = rt_session_summary("neurotypical", "none", int(seed))
+
+rt_col, fit_col = st.columns([3, 2])
+
+with rt_col:
+    fig_rt = go.Figure()
+    bins = dict(start=150, end=1500, size=20)
+    fig_rt.add_trace(go.Histogram(
+        x=reference["rt"], xbins=bins, histnorm="probability density",
+        name=reference["name"], marker_color="#2a9d8f", opacity=0.55,
+    ))
+    if selected["name"] != reference["name"]:
+        fig_rt.add_trace(go.Histogram(
+            x=selected["rt"], xbins=bins, histnorm="probability density",
+            name=selected["name"], marker_color="#e63946", opacity=0.55,
+        ))
+    fig_rt.update_layout(
+        barmode="overlay", height=320,
+        xaxis=dict(title="reaction time (ms)", range=[150, 1500], gridcolor="#eee"),
+        yaxis=dict(title="density", gridcolor="#eee"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(t=30, b=40, l=50, r=20),
+        plot_bgcolor="white", paper_bgcolor="white",
+    )
+    st.plotly_chart(fig_rt, width='stretch')
+
+with fit_col:
+    st.markdown("**Ex-Gaussian fit (ms)**")
+    rows = [("μ  centre", "mu"), ("σ  spread", "sigma"), ("τ  tail", "tau")]
+    header = f"| | {reference['name']} | {selected['name']} |\n|---|---:|---:|\n"
+    body = "".join(
+        f"| {label} | {reference[k]:.0f} | {selected[k]:.0f} |\n" for label, k in rows
+    )
+    body += (f"| lapse rate | {reference['lapse_rate']:.1%} | "
+             f"{selected['lapse_rate']:.1%} |\n")
+    st.markdown(header + body)
+    if selected["name"] != reference["name"]:
+        ratio = selected["tau"] / max(reference["tau"], 1e-9)
+        st.caption(
+            f"τ is **{ratio:.1f}×** the neurotypical value here. Published ADHD/control "
+            f"τ ratios are roughly 1.5–2.5×, so this model overproduces the tail — the "
+            f"*ordering* τ > σ > μ is reproduced, the *magnitude* is not. Likely cause: "
+            f"decision time is hyperbolic in precision, which amplifies lapses. "
+            f"See `scripts/validate_adhd.py` for the group-level comparison."
+        )
+    else:
+        st.caption("Select an ADHD phenotype in the sidebar to see the contrast.")
 
 # ============================================================
 # 3. Step inspector
