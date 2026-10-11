@@ -143,6 +143,30 @@ The [refactor commit](https://github.com/umutakarsu/brainnn/commit/4ee2ba4) spli
 
 **Falsifiability built in from the start.** Following [Frank, Seeberger & O'Reilly (2004, *Science*)](https://doi.org/10.1126/science.1102941)'s double-dissociation logic, the module includes a `shuffled_neuromod()` control that breaks trial↔state pairing. If the true and shuffled conditioning give the same accuracy, the FiLM head is adding capacity without information — the paper claim fails. If true ≫ shuffled, the conditioning is doing real work.
 
+## The ADHD model (v0.3)
+
+The attention module began as a single-parameter-set "ADHD simulation" — which meant it could not actually contrast ADHD against anything. v0.3 makes it a model of a condition: the same machinery produces neurotypical and ADHD behaviour, differing only in parameters, and the output is tested against published data.
+
+![ADHD validation — RT distributions and effect sizes](docs/img/adhd_validation.png)
+
+*Left: simulated reaction-time distributions. ADHD phenotypes gain a heavy right tail from attentional lapses rather than shifting uniformly. Right: Cohen's d against the neurotypical group for each ex-Gaussian parameter, with the meta-analytic bands in grey.*
+
+**Mechanism.** Three phenotypes (neurotypical, ADHD-combined, ADHD-inattentive) in [`core/phenotypes.py`](src/brainnn/core/phenotypes.py), built on the tonic/phasic dopamine account ([Grace 1991](https://doi.org/10.1016/0306-4522(91)90196-U); [Tripp & Wickens 2008](https://doi.org/10.1111/j.1469-7610.2007.01851.x)): low tonic dopamine disinhibits phasic bursts via autoreceptor feedback, so immediate reward pulls disproportionately hard. Dopamine is now `tonic + phasic` with the components tracked separately. Attentional **lapses** — stochastic per-step collapses of precision — are the mechanism that generates the slow tail. Medication modifiers (methylphenidate, amphetamine, atomoxetine, guanfacine) are expressed as deltas on the phenotype parameters.
+
+**Prediction tested.** The most replicated behavioural signature of ADHD is increased reaction-time variability concentrated in the slow tail. In the ex-Gaussian decomposition the group difference is largest in **τ** (tail), moderate in **σ** (spread), smallest in **μ** (centre) — [Leth-Steensen et al. 2000](https://doi.org/10.1016/S0001-6918(00)00019-6); [Kofler et al. 2013](https://doi.org/10.1016/j.cpr.2013.06.001) meta-analysis. [`behavior.py`](src/brainnn/behavior.py) turns the state trajectory into reaction times, fits an ex-Gaussian by MLE per simulated participant, and compares groups.
+
+| Group (80 participants × 300 trials) | μ | σ | τ | d(τ) | d(σ) | d(μ) | ordering |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Neurotypical | 374 | 32 | 32 | — | — | — | — |
+| ADHD — combined | 396 | 39 | 121 | +2.27 | +0.61 | +0.54 | τ > σ > μ ✓ |
+| ADHD — inattentive | 413 | 42 | 152 | +2.48 | +1.04 | +0.87 | τ > σ > μ ✓ |
+
+**What this does and does not show.** Both phenotypes reproduce the published *ordering*. The *magnitude* of τ is overproduced — simulated ADHD/control τ ratios run ~4× against ~1.5–2.5× in published data, so d(τ) lands roughly twice the meta-analytic band. The likely cause is that decision time is hyperbolic in precision, which amplifies lapses non-linearly; a shallower coupling is the obvious next thing to try. Parameters were hand-set to reproduce the qualitative pattern, not fitted to participant data, and reproducing an ordering is weak evidence on its own. These caveats are encoded in [`LITERATURE_PATTERN`](src/brainnn/behavior.py) and shown on the dashboard. Tuning was stopped after four passes rather than overfit to the target bands.
+
+**Two bugs fixed on the way.** The phasic norepinephrine burst was being overwritten by the very next `update()` — it survived zero timesteps, which contradicts the Yu & Dayan framing of NE as a transient unexpected-uncertainty signal. And the `focus` weights summed to 1.2, so hyperfocus fired far too readily. The first behavioural run also exposed that fatigue marched monotonically to 1.0, producing a *left*-skewed RT distribution; it now plateaus at a phenotype-specific ceiling.
+
+Reproduce: `python scripts/validate_adhd.py` writes `checkpoints/adhd_validation.json` and the figure above.
+
 ## Roadmap
 
 - [x] Cross-subject transformer prototype with LOSO evaluation
@@ -151,6 +175,9 @@ The [refactor commit](https://github.com/umutakarsu/brainnn/commit/4ee2ba4) spli
 - [x] Interactive dashboard with attention + logit lens visualization
 - [x] Peter Dayan design review
 - [x] Independent literature synthesis
+- [x] ADHD phenotypes with tonic/phasic dopamine, attentional lapses, and medication modifiers
+- [x] Reaction-time validation against the ex-Gaussian ADHD signature (ordering reproduced; τ magnitude overproduced)
+- [ ] Shallower RT–precision coupling to bring d(τ) into the meta-analytic band
 - [ ] Pupillometry integration to replace EEG-based NE proxy ([Joshi et al. 2016](https://doi.org/10.1016/j.neuron.2015.11.028))
 - [ ] Within-subject cognitive-load manipulation validation
 - [ ] Scale to Meta Brain2Qwerty-tier public MEG datasets
