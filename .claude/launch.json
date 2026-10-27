@@ -12,6 +12,12 @@
       "runtimeExecutable": "/Users/umutakarsu/brainnn/.venv/bin/streamlit",
       "runtimeArgs": ["run", "neurodivergent_app.py", "--server.port", "8502", "--server.headless", "true"],
       "port": 8502
+    },
+    {
+      "name": "Alzheimer GBM Demo",
+      "runtimeExecutable": "/Users/umutakarsu/brainnn/.venv/bin/streamlit",
+      "runtimeArgs": ["run", "examples/alzheimer_gbm_streamlit.py", "--server.port", "8503", "--server.headless", "true"],
+      "port": 8503
     }
   ]
 }
